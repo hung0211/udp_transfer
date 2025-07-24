@@ -1,0 +1,5 @@
+# shared/config.py
+SERVER_IP = "172.16.0.189"  
+SERVER_PORT = 9999
+CHUNK_SIZE = 1024
+OUTPUT_FILE = "test_files/received.txt"
