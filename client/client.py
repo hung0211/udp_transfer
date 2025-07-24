@@ -2,7 +2,7 @@ import os
 import socket
 import select
 import json
-from shared.config import SERVER_PORT, CHUNK_SIZE, OUTPUT_FILE, SERVER_HOST
+from shared.config import SERVER_PORT, CHUNK_SIZE, OUTPUT_FILE, SERVER_IP
 
 def request_all_chunks(sock, filename):
     offset = 0
@@ -14,7 +14,7 @@ def request_all_chunks(sock, filename):
             "offset": offset,
             "length": CHUNK_SIZE
         }
-        sock.sendto(json.dumps(req).encode(), (SERVER_HOST, SERVER_PORT))
+        sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
 
         ready, _, _ = select.select([sock], [], [], 2)
         if ready:
@@ -48,7 +48,7 @@ def merge_chunks(filename):
 
 def request_file_list(sock):
     req = { "type": "GET_LIST" }
-    sock.sendto(json.dumps(req).encode(), (SERVER_HOST, SERVER_PORT))
+    sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
     rlist, _, _ = select.select([sock], [], [], 2)
     if rlist:
         data, _ = sock.recvfrom(4096)
