@@ -1,33 +1,48 @@
-import socket
-import select
-from shared.config import SERVER_PORT, CHUNK_SIZE, OUTPUT_FILE
-from shared.protocol import parse_packet
 
-BUFFER_SIZE = 4096
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.bind(('0.0.0.0', SERVER_PORT))
-sock.setblocking(False)
+import socket, os, json, select
+from shared.config import SERVER_PORT, CHUNK_SIZE
 
-print(f"[SERVER] Listening on port {SERVER_PORT}...")
+def handle_get_list(sock, addr):
+    if not os.path.exists("data/file_list.txt"):
+        sock.sendto(b"ERROR: file_list.txt not found", addr)
+        return
+    with open("data/file_list.txt", "r") as f:
+        content = f.read()
+    sock.sendto(content.encode(), addr)
 
-chunks = {}
+def handle_get_chunk(sock, addr, request):
+    fname = request.get("filename")
+    offset = request.get("offset", 0)
+    length = request.get("length", CHUNK_SIZE)
 
-while True:
-    readable, _, _ = select.select([sock], [], [], 2)
-    if sock in readable:
-        data, addr = sock.recvfrom(BUFFER_SIZE)
+    fpath = f"data/{fname}"
+    if not os.path.exists(fpath):
+        sock.sendto(b"ERROR: File not found", addr)
+        return
 
-        if data == b'EOF':
-            print("[SERVER] End of file signal received.")
-            break
+    with open(fpath, "rb") as f:
+        f.seek(offset)
+        data = f.read(length)
+        sock.sendto(data, addr)
 
-        seq, payload = parse_packet(data)
-        chunks[seq] = payload
-        print(f"[SERVER] Received chunk {seq} from {addr}")
+def main():
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(('', SERVER_PORT))
+    sock.setblocking(False)
+    print(f"🟢 Server listening on UDP port {SERVER_PORT}...")
 
-# Ghi file ra ổ đĩa
-with open(OUTPUT_FILE, 'wb') as f:
-    for i in sorted(chunks.keys()):
-        f.write(chunks[i])
+    while True:
+        rlist, _, _ = select.select([sock], [], [], 2)
+        if sock in rlist:
+            data, addr = sock.recvfrom(4096)
+            try:
+                req = json.loads(data.decode())
+                if req["type"] == "GET_LIST":
+                    handle_get_list(sock, addr)
+                elif req["type"] == "GET_CHUNK":
+                    handle_get_chunk(sock, addr, req)
+            except Exception as e:
+                print(f"❌ Invalid request from {addr}: {e}")
 
-print(f"[SERVER] File written to {OUTPUT_FILE}")
+if __name__ == "__main__":
+    main()
