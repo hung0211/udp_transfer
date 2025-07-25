@@ -1,5 +1,3 @@
-
-SERVER_IP = "192.168.1.2"  # Sửa thành IP của máy chạy server
-SERVER_PORT = 5000
+SERVER_IP = "192.168.1.2"
+SERVER_PORT = 9999
 CHUNK_SIZE = 1024
-OUTPUT_FILE = "output.txt"
