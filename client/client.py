@@ -10,7 +10,7 @@ def request_file_list(sock):
         print("📄 Danh sách file từ server:")
         print(data.decode())
     else:
-        print("❌ Không nhận được phản hồi từ server.")
+        print("❌ Không nhận được phản hồi từ server.".encode().decode())  # encode/decode tránh lỗi
 
 def request_all_chunks(sock, filename):
     offset = 0
@@ -26,18 +26,18 @@ def request_all_chunks(sock, filename):
         sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
         rlist, _, _ = select.select([sock], [], [], 3)
         if not rlist:
-            print("❌ Mất kết nối tới server hoặc timeout.")
+            print("❌ Mất kết nối tới server hoặc timeout.".encode().decode())
             break
 
         data, _ = sock.recvfrom(4096)
-        if data == b"__END__":
-            print("✅ Hoàn tất tải file.")
+        if data.decode(errors="ignore") == "__END__":
+            print("✅ Hoàn tất tải file.".encode().decode())
             break
 
         part_file = f"{filename}.part{part}"
         with open(part_file, "wb") as f:
             f.write(data)
-        print(f"✅ Nhận chunk {part}, ghi vào {part_file}")
+        print(f"✅ Nhận chunk {part}, ghi vào {part_file}".encode().decode())
         chunk_files.append(part_file)
         offset += len(data)
         part += 1
@@ -47,16 +47,16 @@ def request_all_chunks(sock, filename):
         for pf in chunk_files:
             with open(pf, "rb") as f:
                 outfile.write(f.read())
-    print(f"📦 Đã ghép thành công file: received_{filename}")
+    print(f"📦 Đã ghép thành công file: received_{filename}".encode().decode())
 
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
 
-    print("1. Nhận danh sách file từ server")
+    print("1. Nhận danh sách file từ server".encode().decode())
     request_file_list(sock)
 
-    print("\n2. Tải file đầy đủ từ server")
+    print("\n2. Tải file đầy đủ từ server".encode().decode())
     filename = input("Nhập tên file cần tải (phải khớp file_list.txt): ").strip()
     request_all_chunks(sock, filename)
 

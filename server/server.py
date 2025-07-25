@@ -19,11 +19,11 @@ def handle_get_list(addr):
 
 def handle_get_chunk(addr, filename, offset, length):
     if filename not in allowed_files:
-        server_socket.sendto(b"❌ File không hợp lệ.", addr)
+        server_socket.sendto("❌ File không hợp lệ.".encode(), addr)
         return
 
     if not os.path.exists(filename):
-        server_socket.sendto(b"❌ File không tồn tại.", addr)
+        server_socket.sendto("❌ File không tồn tại.".encode(), addr)
         return
 
     with open(filename, "rb") as f:
@@ -44,4 +44,4 @@ while True:
             elif req["type"] == "GET_CHUNK":
                 handle_get_chunk(addr, req["filename"], req["offset"], req["length"])
         except Exception as e:
-            print(f"❌ Lỗi xử lý request từ {addr}: {e}")
+            print("❌ Lỗi xử lý request từ {addr}: {e}".encode())
