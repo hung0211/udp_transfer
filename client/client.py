@@ -58,7 +58,7 @@ def download_files_from_input(sock):
         request_all_chunks_parallel(sock, filename)
 
 
-def request_chunk_async(sock, filename, offset, length, results, idx):
+def request_chunk_async(sock, filename, index, offset, length, result_dict, lock, retries=0):
     req = {
         "type": "GET_CHUNK",
         "filename": filename,
@@ -66,11 +66,31 @@ def request_chunk_async(sock, filename, offset, length, results, idx):
         "length": length
     }
     sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
-    rlist, _, _ = select.select([sock], [], [], 2)
-    if rlist:
-        data, _ = sock.recvfrom(4096)
-        if data != b"__END__":
-            results[idx] = data
+
+    ready, _, _ = select.select([sock], [], [], TIMEOUT)
+    if ready:
+        try:
+            data, _ = sock.recvfrom(4096)
+            if data == b"__END__":
+                print(f"[CLIENT] ✅ Chunk {index} nhận xong (EOF)")
+                return
+
+            part_file = f"{filename}.part{index}"
+            with open(part_file, "wb") as f:
+                f.write(data)
+
+            with lock:
+                result_dict[index] = part_file
+
+            print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(data)} bytes)")
+        except Exception as e:
+            print(f"[CLIENT] ❌ Lỗi khi nhận chunk {index}: {e}")
+    else:
+        if retries < MAX_RETRIES:
+            print(f"[CLIENT] ⚠️ Chunk {index} timeout, thử lại ({retries + 1})...")
+            request_chunk_async(sock, filename, index, offset, length, result_dict, lock, retries + 1)
+        else:
+            print(f"[CLIENT] ❌ Chunk {index} thất bại sau {MAX_RETRIES} lần thử.")
 
 def request_all_chunks_parallel(sock, filename):
     try:
