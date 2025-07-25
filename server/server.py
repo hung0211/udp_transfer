@@ -48,17 +48,22 @@ def handle_get_size(addr, filename):
         size = os.path.getsize(filepath)
         server_socket.sendto(str(size).encode(), addr)
 
-while True:
-    rlist, _, _ = select.select([server_socket], [], [], 1)
-    if rlist:
-        data, addr = server_socket.recvfrom(4096)
-        try:
-            req = json.loads(data.decode())
-            if req["type"] == "GET_LIST":
-                handle_get_list(addr)
-            elif req["type"] == "GET_CHUNK":
-                handle_get_chunk(addr, req["filename"], req["offset"], req["length"])
-            elif req["type"] == "GET_SIZE":
-                handle_get_size(addr, req["filename"])
-        except Exception as e:
-            print(f"❌ Lỗi xử lý request từ {addr}: {e}")
+try:
+    while True:
+        rlist, _, _ = select.select([server_socket], [], [], 1)
+        if rlist:
+            data, addr = server_socket.recvfrom(4096)
+            try:
+                req = json.loads(data.decode())
+                if req["type"] == "GET_LIST":
+                    handle_get_list(addr)
+                elif req["type"] == "GET_CHUNK":
+                    handle_get_chunk(addr, req["filename"], req["offset"], req["length"])
+                elif req["type"] == "GET_SIZE":
+                    handle_get_size(addr, req["filename"])
+            except Exception as e:
+                print(f"❌ Lỗi xử lý request từ {addr}: {e}")
+except KeyboardInterrupt:
+    print("\n[SERVER] 🛑 Đã dừng server bằng Ctrl+C.")
+    server_socket.close()
+
