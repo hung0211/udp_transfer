@@ -45,14 +45,22 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
                 print(f"[CLIENT] ✅ Chunk {index} nhận xong (EOF)")
                 return
 
-            with lock:
-                result_dict[index] = data
-                result_array[index - 1] = True
-                completed = sum(1 for x in result_array if x)
-                percent = (completed / num_chunks) * 100
-                print(f"[CLIENT] 🟡 Tiến độ: {completed}/{num_chunks} chunks ({percent:.2f}%)")
+            packet = json.loads(data.decode())
+            chunk_data = base64.b64decode(packet["data"])
+            checksum = packet["checksum"]
 
-            print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(data)} bytes)")
+            if hashlib.sha256(chunk_data).hexdigest() == checksum:
+                with lock:
+                    result_dict[index] = chunk_data
+                    result_array[index - 1] = True
+                    completed = sum(1 for x in result_array if x)
+                    percent = (completed / num_chunks) * 100
+                    print(f"[CLIENT] 🟡 Tiến độ: {completed}/{num_chunks} chunks ({percent:.2f}%)")
+
+                print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(chunk_data)} bytes)")
+            else:
+                print(f"[CLIENT] ❌ Checksum không khớp ở chunk {index}")
+
         except Exception as e:
             print(f"[CLIENT] ❌ Lỗi khi nhận chunk {index}: {e}")
     else:
@@ -84,7 +92,6 @@ def request_all_chunks_parallel(sock, filename):
     for t in threads:
         t.join()
 
-    # Retry các chunk bị thiếu
     missing_chunks = [i for i in range(1, num_chunks + 1) if i not in result_dict]
     if missing_chunks:
         print(f"⚠️ Thiếu {len(missing_chunks)} chunk(s): {missing_chunks}. Thử tải lại...")
