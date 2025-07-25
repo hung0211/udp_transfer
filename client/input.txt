@@ -1,2 +1,2 @@
 sample.txt
-5MB.zip
+20MB.zip

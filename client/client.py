@@ -27,7 +27,7 @@ def get_file_size(sock, filename):
             return None
     return None
 
-def request_chunk_async(sock, filename, index, offset, length, result_dict, lock, retries=0):
+def request_chunk_async(sock, filename, index, offset, length, result_dict, lock, num_chunks, retries=0):
     req = {
         "type": "GET_CHUNK",
         "filename": filename,
@@ -50,6 +50,9 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
 
             with lock:
                 result_dict[index] = part_file
+                completed = len(result_dict)
+                percent = (completed / num_chunks) * 100
+                print(f"[CLIENT] 🟡 Tiến độ: {completed}/{num_chunks} chunks ({percent:.2f}%)")
 
             print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(data)} bytes)")
         except Exception as e:
@@ -57,7 +60,7 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
     else:
         if retries < MAX_RETRIES:
             print(f"[CLIENT] ⚠️ Chunk {index} timeout, thử lại ({retries + 1})...")
-            request_chunk_async(sock, filename, index, offset, length, result_dict, lock, retries + 1)
+            request_chunk_async(sock, filename, index, offset, length, result_dict, lock, num_chunks, retries + 1)
         else:
             print(f"[CLIENT] ❌ Chunk {index} thất bại sau {MAX_RETRIES} lần thử.")
 
@@ -74,14 +77,13 @@ def request_all_chunks_parallel(sock, filename):
 
     for i in range(num_chunks):
         offset = i * CHUNK_SIZE
-        t = threading.Thread(target=request_chunk_async, args=(sock, filename, i + 1, offset, CHUNK_SIZE, result_dict, lock))
+        t = threading.Thread(target=request_chunk_async, args=(sock, filename, i + 1, offset, CHUNK_SIZE, result_dict, lock, num_chunks))
         t.start()
         threads.append(t)
 
     for t in threads:
         t.join()
 
-    # Gộp file
     with open(f"received_{filename}", "wb") as f:
         for i in range(1, num_chunks + 1):
             part_file = result_dict.get(i)
