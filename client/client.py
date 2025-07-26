@@ -23,7 +23,10 @@ def get_file_size(sock, filename):
     if rlist:
         data, _ = sock.recvfrom(4096)
         try:
-            return int(data.decode())
+            size = int(data.decode())
+            if size == 0:
+                return None
+            return size
         except:
             return None
     return None

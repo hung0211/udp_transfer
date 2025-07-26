@@ -1,21 +1,16 @@
 import os
 import socket
-import select
 import json
+import select
 import hashlib
-import base64
-from shared.config import SERVER_PORT, CHUNK_SIZE, SERVER_IP
+from shared.config import SERVER_IP, SERVER_PORT
 
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_socket.bind((SERVER_IP, SERVER_PORT))
 print(f"[SERVER] Đang chạy tại {SERVER_IP}:{SERVER_PORT}")
 
-try:
-    with open("server/file_list.txt") as f:
-        allowed_files = [line.strip() for line in f.readlines() if line.strip()]
-except FileNotFoundError:
-    print("❌ Không tìm thấy file_list.txt trong thư mục server/")
-    allowed_files = []
+with open("server/file_list.txt") as f:
+    allowed_files = [line.strip() for line in f.readlines() if line.strip()]
 
 def handle_get_list(addr):
     files = os.listdir("server")
@@ -26,19 +21,24 @@ def handle_get_list(addr):
 def handle_get_chunk(addr, filename, offset, length):
     filepath = os.path.join("server", filename)
     if filename not in allowed_files or not os.path.exists(filepath):
-        server_socket.sendto("__INVALID__".encode(), addr)
+        server_socket.sendto(b"0", addr)
         return
 
     with open(filepath, "rb") as f:
         f.seek(offset)
         chunk = f.read(length)
 
-        checksum = hashlib.sha256(chunk).hexdigest()
-        packet = {
-            "data": base64.b64encode(chunk).decode(),  # Encode để truyền an toàn
-            "checksum": checksum
-        }
+    packet = {
+        "data": base64_encode(chunk),
+        "checksum": hashlib.sha256(chunk).hexdigest()
+    }
+    try:
         server_socket.sendto(json.dumps(packet).encode(), addr)
+    except Exception as e:
+        print(f"[SERVER] ❌ Lỗi gửi chunk: {e}")
+
+    if len(chunk) < length:
+        server_socket.sendto(b"__END__", addr)
 
 def handle_get_size(addr, filename):
     filepath = os.path.join("server", filename)
@@ -48,11 +48,15 @@ def handle_get_size(addr, filename):
         size = os.path.getsize(filepath)
         server_socket.sendto(str(size).encode(), addr)
 
+def base64_encode(data):
+    import base64
+    return base64.b64encode(data).decode()
+
 try:
     while True:
         rlist, _, _ = select.select([server_socket], [], [], 1)
         if rlist:
-            data, addr = server_socket.recvfrom(4096)
+            data, addr = server_socket.recvfrom(8192)
             try:
                 req = json.loads(data.decode())
                 if req["type"] == "GET_LIST":
@@ -64,6 +68,4 @@ try:
             except Exception as e:
                 print(f"❌ Lỗi xử lý request từ {addr}: {e}")
 except KeyboardInterrupt:
-    print("\n[SERVER] 🛑 Đã dừng server bằng Ctrl+C.")
-    server_socket.close()
-
+    print("\n[SERVER] 🛑 Dừng server.")
