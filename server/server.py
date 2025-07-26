@@ -40,19 +40,20 @@ def handle_get_chunk(addr, filename, offset, length):
         print(f"[SERVER] ❌ Lỗi khi gửi chunk: {e}")
 
 def handle_get_size(addr, filename):
-    full_path = os.path.join("server", filename) 
+    full_path = os.path.join("server", filename)
+
     if filename not in allowed_files:
-        print(f"[SERVER] ❌ {filename} không có trong danh sách cho phép.")
-        server_socket.sendto(b"0", addr)
+        print(f"[SERVER] ❌ File không được phép: {filename}")
+        server_socket.sendto(b"__INVALID__", addr)
         return
 
     if not os.path.exists(full_path):
         print(f"[SERVER] ❌ File không tồn tại: {full_path}")
-        server_socket.sendto(b"0", addr)
+        server_socket.sendto(b"__INVALID__", addr)
         return
 
     size = os.path.getsize(full_path)
-    print(f"[SERVER] ✅ Kích thước {filename}: {size} bytes")
+    print(f"[SERVER] ✅ Trả kích thước file {filename}: {size} bytes")
     server_socket.sendto(str(size).encode(), addr)
 
 try:

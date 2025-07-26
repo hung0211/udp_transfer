@@ -22,14 +22,15 @@ def get_file_size(sock, filename):
     rlist, _, _ = select.select([sock], [], [], TIMEOUT)
     if rlist:
         data, _ = sock.recvfrom(4096)
+        print(f"[CLIENT] 📦 Phản hồi server (raw): {repr(data)}")  
         try:
             size = int(data.decode())
             if size <= 0:
                 print(f"[CLIENT] ❌ Kích thước không hợp lệ hoặc bị từ chối: {size}")
                 return None
             return size
-        except:
-            print("[CLIENT] ❌ Không thể phân tích phản hồi từ server.")
+        except Exception as e:
+            print(f"[CLIENT] ❌ Không thể phân tích phản hồi từ server: {e}")
             return None
     else:
         print("[CLIENT] ❌ Timeout khi chờ kích thước.")
