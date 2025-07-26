@@ -40,12 +40,12 @@ def handle_get_chunk(addr, filename, offset, length):
             ack_data, ack_addr = server_socket.recvfrom(4096)
             try:
                 ack_msg = json.loads(ack_data.decode())
-                if (
-                    ack_msg.get("type") == "ACK" and
-                    ack_msg.get("filename") == filename and
-                    ack_msg.get("offset") == offset
-                ):
-                    print(f"[SERVER] ✅ ACK received for {filename} offset {offset} from {ack_addr}")
+                # if (
+                #     ack_msg.get("type") == "ACK" and
+                #     ack_msg.get("filename") == filename and
+                #     ack_msg.get("offset") == offset
+                # ):
+                    # print(f"[SERVER] ✅ ACK received for {filename} offset {offset} from {ack_addr}")
             except Exception as e:
                 print(f"[SERVER] ⚠️ Failed to parse ACK from {addr}: {e}")
 
