@@ -67,8 +67,8 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
                 result_array[index - 1] = True
 
             if log_per_chunk:
-                percent = ((index - 1) / num_chunks) * 100
-                print(f"[CLIENT] 🍰 Downloading {filename} chunk {index}... ({percent:.1f}%)")
+                chunk_percent = (len(chunk_data) / length) * 100
+                print(f"[CLIENT] 🍰 Downloading {filename} chunk {index}... {chunk_percent:.1f}%")
         except Exception:
             if retries < MAX_RETRIES:
                 time.sleep(0.2)
