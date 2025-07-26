@@ -19,26 +19,21 @@ def handle_get_list(addr):
     server_socket.sendto(response.encode(), addr)
 
 def handle_get_chunk(addr, filename, offset, length):
-    filepath = os.path.join("server", filename)
-    if filename not in allowed_files or not os.path.exists(filepath):
-        server_socket.sendto(b"0", addr)
+    path = os.path.join("server", filename)
+    if filename not in allowed_files or not os.path.exists(path):
+        server_socket.sendto("__INVALID__".encode(), addr)
         return
 
-    with open(filepath, "rb") as f:
+    with open(path, "rb") as f:
         f.seek(offset)
         chunk = f.read(length)
 
-    packet = {
-        "data": base64_encode(chunk),
-        "checksum": hashlib.sha256(chunk).hexdigest()
-    }
-    try:
+        checksum = hashlib.sha256(chunk).hexdigest()
+        packet = {
+            "data": base64.b64encode(chunk).decode(),
+            "checksum": checksum
+        }
         server_socket.sendto(json.dumps(packet).encode(), addr)
-    except Exception as e:
-        print(f"[SERVER] ❌ Lỗi gửi chunk: {e}")
-
-    if len(chunk) < length:
-        server_socket.sendto(b"__END__", addr)
 
 def handle_get_size(addr, filename):
     filepath = os.path.join("server", filename)

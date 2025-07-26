@@ -43,26 +43,42 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
     ready, _, _ = select.select([sock], [], [], TIMEOUT)
     if ready:
         try:
-            data, _ = sock.recvfrom(4096)
+            data, _ = sock.recvfrom(65536)
             if data == b"__END__":
                 print(f"[CLIENT] ✅ Chunk {index} nhận xong (EOF)")
                 return
 
+            packet = json.loads(data.decode())
+            chunk_data = base64.b64decode(packet["data"])
+            checksum = packet["checksum"]
+
+            if hashlib.sha256(chunk_data).hexdigest() != checksum:
+                print(f"[CLIENT] ❌ Checksum không khớp ở chunk {index}. Thử lại...")
+                raise ValueError("Checksum mismatch")
+
             with lock:
-                result_dict[index] = data
+                result_dict[index] = chunk_data
                 result_array[index - 1] = True
                 completed = sum(1 for x in result_array if x)
                 percent = (completed / num_chunks) * 100
+                print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(chunk_data)} bytes)")
                 print(f"[CLIENT] 🟡 Tiến độ: {completed}/{num_chunks} chunks ({percent:.2f}%)")
 
-            print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(data)} bytes)")
         except Exception as e:
             print(f"[CLIENT] ❌ Lỗi khi nhận chunk {index}: {e}")
+            if retries < MAX_RETRIES:
+                print(f"[CLIENT] 🔁 Thử lại chunk {index} ({retries + 1}/{MAX_RETRIES})...")
+                time.sleep(0.2)
+                request_chunk_async(sock, filename, index, offset, length,
+                                    result_dict, lock, result_array, num_chunks, retries + 1)
+            else:
+                print(f"[CLIENT] ❌ Chunk {index} thất bại sau {MAX_RETRIES} lần thử.")
     else:
         if retries < MAX_RETRIES:
             print(f"[CLIENT] ⚠️ Chunk {index} timeout, thử lại ({retries + 1})...")
             time.sleep(0.2)
-            request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries + 1)
+            request_chunk_async(sock, filename, index, offset, length,
+                                result_dict, lock, result_array, num_chunks, retries + 1)
         else:
             print(f"[CLIENT] ❌ Chunk {index} thất bại sau {MAX_RETRIES} lần thử.")
 
