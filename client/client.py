@@ -51,8 +51,11 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
     ready, _, _ = select.select([sock], [], [], TIMEOUT)
     if ready:
         try:
-            data, _ = sock.recvfrom(65536)
+            data, server_addr = sock.recvfrom(65536)
             if data == b"__END__":
+                return
+            if data == b"__INVALID__":
+                print(f"[CLIENT] ❌ Invalid request for {filename} offset {offset}. Skipping chunk {index}.")
                 return
 
             packet = json.loads(data.decode())
@@ -62,14 +65,17 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
             if hashlib.sha256(chunk_data).hexdigest() != checksum:
                 raise ValueError("Checksum mismatch")
 
+            ack_msg = json.dumps({"type": "ACK", "filename": filename, "offset": offset})
+            sock.sendto(ack_msg.encode(), server_addr)
+
             with lock:
                 result_dict[index] = chunk_data
                 result_array[index - 1] = True
 
             if log_per_chunk:
-                chunk_percent = (len(chunk_data) / length) * 100
-                print(f"[CLIENT] 🍰 Downloading {filename} chunk {index}... {chunk_percent:.1f}%")
-        except Exception:
+                print(f"[CLIENT] Downloading {filename} chunk {index}... 100.0%")
+        except Exception as e:
+            print(f"[CLIENT] ⚠️ Error on chunk {index}: {e}")
             if retries < MAX_RETRIES:
                 time.sleep(0.2)
                 request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, log_per_chunk, retries + 1)
@@ -182,7 +188,6 @@ def download_files_from_input(sock, idle_timeout=10):
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
-
     download_files_from_input(sock)
 
 if __name__ == "__main__":
