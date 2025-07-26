@@ -45,22 +45,14 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
                 print(f"[CLIENT] ✅ Chunk {index} nhận xong (EOF)")
                 return
 
-            packet = json.loads(data.decode())
-            chunk_data = base64.b64decode(packet["data"])
-            checksum = packet["checksum"]
+            with lock:
+                result_dict[index] = data
+                result_array[index - 1] = True
+                completed = sum(1 for x in result_array if x)
+                percent = (completed / num_chunks) * 100
+                print(f"[CLIENT] 🟡 Tiến độ: {completed}/{num_chunks} chunks ({percent:.2f}%)")
 
-            if hashlib.sha256(chunk_data).hexdigest() == checksum:
-                with lock:
-                    result_dict[index] = chunk_data
-                    result_array[index - 1] = True
-                    completed = sum(1 for x in result_array if x)
-                    percent = (completed / num_chunks) * 100
-                    print(f"[CLIENT] 🟡 Tiến độ: {completed}/{num_chunks} chunks ({percent:.2f}%)")
-
-                print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(chunk_data)} bytes)")
-            else:
-                print(f"[CLIENT] ❌ Checksum không khớp ở chunk {index}")
-
+            print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(data)} bytes)")
         except Exception as e:
             print(f"[CLIENT] ❌ Lỗi khi nhận chunk {index}: {e}")
     else:
@@ -109,16 +101,39 @@ def request_all_chunks_parallel(sock, filename):
 
     print(f"✅ Đã tải xong song song file: received_{filename}")
 
-def download_files_from_input(sock):
-    try:
-        with open("client/input.txt") as f:
-            filenames = [line.strip() for line in f.readlines() if line.strip()]
-    except:
-        print("[CLIENT] ❌ Không thể đọc input.txt")
-        return
-    for filename in filenames:
-        print(f"\n🚀 Bắt đầu tải file song song: {filename}")
-        request_all_chunks_parallel(sock, filename)
+def download_files_from_input(sock, idle_timeout=10):
+    downloaded = set()
+    idle_time = 0
+    poll_interval = 2
+
+    print(f"[CLIENT] Theo dõi input.txt. Dừng nếu không có file mới trong {idle_timeout} giây.")
+    while True:
+        try:
+            with open("client/input.txt") as f:
+                filenames = [line.strip() for line in f.readlines() if line.strip()]
+        except:
+            print("[CLIENT] ❌ Không thể đọc input.txt")
+            time.sleep(poll_interval)
+            idle_time += poll_interval
+            if idle_time >= idle_timeout:
+                print("[CLIENT] ⏹ Không có hoạt động. Dừng client.")
+                break
+            continue
+
+        new_files = [fn for fn in filenames if fn not in downloaded]
+        if new_files:
+            idle_time = 0
+            for filename in new_files:
+                print(f"\n🚀 Bắt đầu tải file: {filename}")
+                request_all_chunks_parallel(sock, filename)
+                downloaded.add(filename)
+        else:
+            idle_time += poll_interval
+            if idle_time >= idle_timeout:
+                print(f"[CLIENT] ⏹ Không có file mới trong {idle_timeout} giây. Dừng client.")
+                break
+
+        time.sleep(poll_interval)
 
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
