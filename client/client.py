@@ -19,22 +19,21 @@ def request_file_list(sock):
 def get_file_size(sock, filename):
     req = {"type": "GET_SIZE", "filename": filename}
     sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
-    rlist, _, _ = select.select([sock], [], [], TIMEOUT)
-    if rlist:
-        data, _ = sock.recvfrom(4096)
-        print(f"[CLIENT] 📦 Phản hồi server (raw): {repr(data)}")  
-        try:
-            size = int(data.decode())
-            if size <= 0:
-                print(f"[CLIENT] ❌ Kích thước không hợp lệ hoặc bị từ chối: {size}")
-                return None
-            return size
-        except Exception as e:
-            print(f"[CLIENT] ❌ Không thể phân tích phản hồi từ server: {e}")
-            return None
-    else:
-        print("[CLIENT] ❌ Timeout khi chờ kích thước.")
-        return None
+
+    start_time = time.time()
+    while time.time() - start_time < TIMEOUT:
+        rlist, _, _ = select.select([sock], [], [], 0.2)
+        if rlist:
+            data, _ = sock.recvfrom(4096)
+            try:
+                text = data.decode()
+                if text.isdigit():
+                    return int(text)
+                else:
+                    print(f"[CLIENT] ❌ Phản hồi không phải số nguyên: {text}")
+            except Exception as e:
+                print(f"[CLIENT] ❌ Không thể phân tích phản hồi từ server: {e}")
+    return None
 
 def request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries=0):
     req = {
