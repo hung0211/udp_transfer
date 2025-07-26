@@ -40,12 +40,20 @@ def handle_get_chunk(addr, filename, offset, length):
         print(f"[SERVER] ❌ Lỗi khi gửi chunk: {e}")
 
 def handle_get_size(addr, filename):
-    file_path = os.path.join("server", filename)
-    if filename not in allowed_files or not os.path.exists(file_path):
+    full_path = os.path.join("server", filename) 
+    if filename not in allowed_files:
+        print(f"[SERVER] ❌ {filename} không có trong danh sách cho phép.")
         server_socket.sendto(b"0", addr)
-    else:
-        size = os.path.getsize(file_path)
-        server_socket.sendto(str(size).encode(), addr)
+        return
+
+    if not os.path.exists(full_path):
+        print(f"[SERVER] ❌ File không tồn tại: {full_path}")
+        server_socket.sendto(b"0", addr)
+        return
+
+    size = os.path.getsize(full_path)
+    print(f"[SERVER] ✅ Kích thước {filename}: {size} bytes")
+    server_socket.sendto(str(size).encode(), addr)
 
 try:
     while True:
@@ -58,7 +66,10 @@ try:
                     handle_get_list(addr)
                 elif req["type"] == "GET_CHUNK":
                     handle_get_chunk(addr, req["filename"], req["offset"], req["length"])
+                # elif req["type"] == "GET_SIZE":
+                    # handle_get_size(addr, req["filename"])
                 elif req["type"] == "GET_SIZE":
+                    print(f"[SERVER] GET_SIZE request: {req['filename']} from {addr}")
                     handle_get_size(addr, req["filename"])
             except Exception as e:
                 print(f"❌ Lỗi xử lý request từ {addr}: {e}")
