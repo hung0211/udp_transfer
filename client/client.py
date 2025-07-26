@@ -19,12 +19,12 @@ def request_file_list(sock):
 def get_file_size(sock, filename):
     req = {"type": "GET_SIZE", "filename": filename}
     sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
-    rlist, _, _ = select.select([sock], [], [], 2)
+    rlist, _, _ = select.select([sock], [], [], TIMEOUT)
     if rlist:
         data, _ = sock.recvfrom(4096)
         try:
             size = int(data.decode())
-            if size == 0:
+            if size <= 0:
                 return None
             return size
         except:
@@ -53,7 +53,6 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
             checksum = packet["checksum"]
 
             if hashlib.sha256(chunk_data).hexdigest() != checksum:
-                print(f"[CLIENT] ❌ Checksum không khớp ở chunk {index}. Thử lại...")
                 raise ValueError("Checksum mismatch")
 
             with lock:
@@ -69,16 +68,14 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
             if retries < MAX_RETRIES:
                 print(f"[CLIENT] 🔁 Thử lại chunk {index} ({retries + 1}/{MAX_RETRIES})...")
                 time.sleep(0.2)
-                request_chunk_async(sock, filename, index, offset, length,
-                                    result_dict, lock, result_array, num_chunks, retries + 1)
+                request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries + 1)
             else:
                 print(f"[CLIENT] ❌ Chunk {index} thất bại sau {MAX_RETRIES} lần thử.")
     else:
         if retries < MAX_RETRIES:
             print(f"[CLIENT] ⚠️ Chunk {index} timeout, thử lại ({retries + 1})...")
             time.sleep(0.2)
-            request_chunk_async(sock, filename, index, offset, length,
-                                result_dict, lock, result_array, num_chunks, retries + 1)
+            request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries + 1)
         else:
             print(f"[CLIENT] ❌ Chunk {index} thất bại sau {MAX_RETRIES} lần thử.")
 
