@@ -3,9 +3,9 @@ from shared.config import SERVER_IP, SERVER_PORT, CHUNK_SIZE
 
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 server_socket.bind((SERVER_IP, SERVER_PORT))
-print(f"[SERVER] Đang chạy tại {SERVER_IP}:{SERVER_PORT}")
+print(f"[SERVER] Running on {SERVER_IP}:{SERVER_PORT}")
 
-# Danh sách file hợp lệ
+# Valid file list
 with open("server/file_list.txt") as f:
     allowed_files = [line.strip() for line in f if line.strip()]
 
@@ -40,7 +40,7 @@ def handle_get_size(addr, filename):
         server_socket.sendto(b"0", addr)
         return
     size = os.path.getsize(filepath)
-    print(f"[SERVER] ✅ Trả kích thước file {filename}: {size} bytes")
+    print(f"[SERVER] ✅ Sent size of file {filename}: {size} bytes")
     server_socket.sendto(str(size).encode(), addr)
 
 try:
@@ -57,7 +57,7 @@ try:
                 elif req["type"] == "GET_SIZE":
                     handle_get_size(addr, req["filename"])
             except Exception as e:
-                print(f"[SERVER] ❌ Lỗi khi xử lý request từ {addr}: {e}")
+                print(f"[SERVER] ❌ Error handling request from {addr}: {e}")
 except KeyboardInterrupt:
-    print("\n[SERVER] 🛑 Đã nhận tín hiệu Ctrl+C. Đang tắt server...")
+    print("\n[SERVER] 🛑 Ctrl+C received. Shutting down server...")
     server_socket.close()

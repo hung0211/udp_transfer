@@ -14,12 +14,12 @@ def request_file_list(sock):
     if rlist:
         data, _ = sock.recvfrom(4096)
         file_list = data.decode().splitlines()
-        print("[CLIENT] Danh sách file từ server:")
+        print("[CLIENT] File list from server:")
         for f in file_list:
             print(f)
         return set(file_list)
     else:
-        print("[CLIENT] ❌ Không nhận được phản hồi từ server.")
+        print("[CLIENT] ❌ No response from server.")
         return set()
 
 def get_file_size(sock, filename):
@@ -34,8 +34,8 @@ def get_file_size(sock, filename):
                 return None
             return size
         except:
-            print("[CLIENT] ❌ Không thể phân tích phản hồi từ server.")
-            print(f"[CLIENT] 📦 Phản hồi server (raw): {data}")
+            print("[CLIENT] ❌ Unable to parse server response.")
+            print(f"[CLIENT] 📦 Server response (raw): {data}")
             return None
     return None
 
@@ -81,7 +81,7 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
 def request_all_chunks_parallel(sock, filename):
     filesize = get_file_size(sock, filename)
     if filesize is None:
-        print("❌ Không thể lấy kích thước file.")
+        print("❌ Unable to get file size.")
         return
 
     num_chunks = (filesize + CHUNK_SIZE - 1) // CHUNK_SIZE
@@ -102,7 +102,7 @@ def request_all_chunks_parallel(sock, filename):
     else:
         num_worker_threads = 10
 
-    pbar = tqdm(total=num_chunks, desc=f"📥 Đang tải {filename}", unit="chunk")
+    pbar = tqdm(total=num_chunks, desc=f"📥 Downloading {filename}", unit="chunk")
 
     def worker():
         while not task_queue.empty():
@@ -123,27 +123,27 @@ def request_all_chunks_parallel(sock, filename):
 
     missing_chunks = [i for i in range(1, num_chunks + 1) if i not in result_dict]
     if missing_chunks:
-        print(f"⚠️ Thiếu {len(missing_chunks)} chunk(s): {missing_chunks}. Thử tải lại...")
+        print(f"⚠️ Missing {len(missing_chunks)} chunk(s): {missing_chunks}. Retrying...")
         for i in missing_chunks:
             offset = (i - 1) * CHUNK_SIZE
             request_chunk_async(sock, filename, i, offset, CHUNK_SIZE, result_dict, lock, result_array, num_chunks, log_per_chunk)
 
     if len(result_dict) != num_chunks:
-        print(f"❌ Vẫn còn thiếu {num_chunks - len(result_dict)} chunk(s). Không thể ghép file đầy đủ.")
+        print(f"❌ Still missing {num_chunks - len(result_dict)} chunk(s). Cannot assemble complete file.")
         return
 
     with open(f"received_{filename}", "wb") as f:
         for i in range(1, num_chunks + 1):
             f.write(result_dict[i])
 
-    print(f"✅ Đã tải xong song song file: received_{filename}")
+    print(f"✅ Successfully downloaded file: received_{filename}")
 
 def download_files_from_input(sock, idle_timeout=10):
     downloaded = set()
     idle_time = 0
     poll_interval = 2
 
-    print(f"[CLIENT] Theo dõi input.txt. Dừng nếu không có file mới trong {idle_timeout} giây.")
+    print(f"[CLIENT] Monitoring input.txt. Will stop if no new file in {idle_timeout} seconds.")
 
     available_files = request_file_list(sock)
 
@@ -152,11 +152,11 @@ def download_files_from_input(sock, idle_timeout=10):
             with open("client/input.txt") as f:
                 filenames = [line.strip() for line in f.readlines() if line.strip()]
         except:
-            print("[CLIENT] ❌ Không thể đọc input.txt")
+            print("[CLIENT] ❌ Unable to read input.txt")
             time.sleep(poll_interval)
             idle_time += poll_interval
             if idle_time >= idle_timeout:
-                print("[CLIENT] ⏹ Không có hoạt động. Dừng client.")
+                print("[CLIENT] ⏹ No activity. Stopping client.")
                 break
             continue
 
@@ -165,16 +165,16 @@ def download_files_from_input(sock, idle_timeout=10):
             idle_time = 0
             for filename in new_files:
                 if filename not in available_files:
-                    print(f"[CLIENT] ❌ File '{filename}' không tồn tại trên server. Bỏ qua.")
+                    print(f"[CLIENT] ❌ File '{filename}' not found on server. Skipping.")
                     downloaded.add(filename)
                     continue
-                print(f"\n🚀 Bắt đầu tải file: {filename}")
+                print(f"\n🚀 Starting download: {filename}")
                 request_all_chunks_parallel(sock, filename)
                 downloaded.add(filename)
         else:
             idle_time += poll_interval
             if idle_time >= idle_timeout:
-                print(f"[CLIENT] ⏹ Không có file mới trong {idle_timeout} giây. Dừng client.")
+                print(f"[CLIENT] ⏹ No new file in {idle_timeout} seconds. Stopping client.")
                 break
 
         time.sleep(poll_interval)
@@ -189,4 +189,4 @@ if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\n[CLIENT] 🛑 Kết thúc client.")
+        print("\n[CLIENT] 🛑 Client stopped.")
