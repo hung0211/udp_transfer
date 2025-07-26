@@ -19,20 +19,18 @@ def request_file_list(sock):
 def get_file_size(sock, filename):
     req = {"type": "GET_SIZE", "filename": filename}
     sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
-
-    start_time = time.time()
-    while time.time() - start_time < TIMEOUT:
-        rlist, _, _ = select.select([sock], [], [], 0.2)
-        if rlist:
-            data, _ = sock.recvfrom(4096)
-            try:
-                text = data.decode()
-                if text.isdigit():
-                    return int(text)
-                else:
-                    print(f"[CLIENT] ❌ Phản hồi không phải số nguyên: {text}")
-            except Exception as e:
-                print(f"[CLIENT] ❌ Không thể phân tích phản hồi từ server: {e}")
+    rlist, _, _ = select.select([sock], [], [], TIMEOUT)
+    if rlist:
+        data, _ = sock.recvfrom(4096)
+        try:
+            size = int(data.decode())
+            if size <= 0:
+                return None
+            return size
+        except:
+            print("[CLIENT] ❌ Không thể phân tích phản hồi từ server.")
+            print(f"[CLIENT] 📦 Phản hồi server (raw): {data}")
+            return None
     return None
 
 def request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries=0):
@@ -62,10 +60,8 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
             with lock:
                 result_dict[index] = chunk_data
                 result_array[index - 1] = True
-                completed = sum(1 for x in result_array if x)
-                percent = (completed / num_chunks) * 100
-                print(f"[CLIENT] ✅ Chunk {index} nhận thành công ({len(chunk_data)} bytes)")
-                print(f"[CLIENT] 🟡 Tiến độ: {completed}/{num_chunks} chunks ({percent:.2f}%)")
+                percent_chunk = (len(chunk_data) / length) * 100
+                print(f"[CLIENT] 📥 Downloading {filename} chunk {index} ... {percent_chunk:.0f}%")
 
         except Exception as e:
             print(f"[CLIENT] ❌ Lỗi khi nhận chunk {index}: {e}")
