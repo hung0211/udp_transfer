@@ -13,13 +13,14 @@ def request_file_list(sock):
     rlist, _, _ = select.select([sock], [], [], TIMEOUT)
     if rlist:
         data, _ = sock.recvfrom(4096)
-        decoded = data.decode()
+        file_list = data.decode().splitlines()
         print("[CLIENT] Danh sách file từ server:")
-        print(decoded)
-        return decoded.strip().splitlines()
+        for f in file_list:
+            print(f)
+        return set(file_list)
     else:
         print("[CLIENT] ❌ Không nhận được phản hồi từ server.")
-        return []
+        return set()
 
 def get_file_size(sock, filename):
     req = {"type": "GET_SIZE", "filename": filename}
@@ -38,7 +39,7 @@ def get_file_size(sock, filename):
             return None
     return None
 
-def request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries=0):
+def request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, log_per_chunk, retries=0):
     req = {
         "type": "GET_CHUNK",
         "filename": filename,
@@ -58,23 +59,24 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
             chunk_data = base64.b64decode(packet["data"])
             checksum = packet["checksum"]
 
-            percent = round(len(chunk_data) / length * 100, 2)
-            print(f"[CLIENT] 📥 Downloading {filename} chunk {index}... {percent}%")
-
             if hashlib.sha256(chunk_data).hexdigest() != checksum:
                 raise ValueError("Checksum mismatch")
 
             with lock:
                 result_dict[index] = chunk_data
                 result_array[index - 1] = True
-        except Exception as e:
+
+            if log_per_chunk:
+                percent = ((index - 1) / num_chunks) * 100
+                print(f"[CLIENT] 🍰 Downloading {filename} chunk {index}... ({percent:.1f}%)")
+        except Exception:
             if retries < MAX_RETRIES:
                 time.sleep(0.2)
-                request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries + 1)
+                request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, log_per_chunk, retries + 1)
     else:
         if retries < MAX_RETRIES:
             time.sleep(0.2)
-            request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries + 1)
+            request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, log_per_chunk, retries + 1)
 
 def request_all_chunks_parallel(sock, filename):
     filesize = get_file_size(sock, filename)
@@ -86,15 +88,16 @@ def request_all_chunks_parallel(sock, filename):
     result_dict = {}
     result_array = [False] * num_chunks
     lock = threading.Lock()
+    log_per_chunk = num_chunks > 1
 
     task_queue = Queue()
     for i in range(num_chunks):
         offset = i * CHUNK_SIZE
         task_queue.put((i + 1, offset, CHUNK_SIZE))
 
-    if filesize > 100 * 1024 * 1024:  # >100MB
+    if filesize > 100 * 1024 * 1024:
         num_worker_threads = 50
-    elif filesize > 10 * 1024 * 1024:  # >10MB
+    elif filesize > 10 * 1024 * 1024:
         num_worker_threads = 30
     else:
         num_worker_threads = 10
@@ -105,7 +108,7 @@ def request_all_chunks_parallel(sock, filename):
         while not task_queue.empty():
             try:
                 index, offset, length = task_queue.get_nowait()
-                request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks)
+                request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, log_per_chunk)
                 pbar.update(1)
             except:
                 break
@@ -123,7 +126,7 @@ def request_all_chunks_parallel(sock, filename):
         print(f"⚠️ Thiếu {len(missing_chunks)} chunk(s): {missing_chunks}. Thử tải lại...")
         for i in missing_chunks:
             offset = (i - 1) * CHUNK_SIZE
-            request_chunk_async(sock, filename, i, offset, CHUNK_SIZE, result_dict, lock, result_array, num_chunks)
+            request_chunk_async(sock, filename, i, offset, CHUNK_SIZE, result_dict, lock, result_array, num_chunks, log_per_chunk)
 
     if len(result_dict) != num_chunks:
         print(f"❌ Vẫn còn thiếu {num_chunks - len(result_dict)} chunk(s). Không thể ghép file đầy đủ.")
@@ -135,12 +138,15 @@ def request_all_chunks_parallel(sock, filename):
 
     print(f"✅ Đã tải xong song song file: received_{filename}")
 
-def download_files_from_input(sock, server_file_list, idle_timeout=10):
+def download_files_from_input(sock, idle_timeout=10):
     downloaded = set()
     idle_time = 0
     poll_interval = 2
 
     print(f"[CLIENT] Theo dõi input.txt. Dừng nếu không có file mới trong {idle_timeout} giây.")
+
+    available_files = request_file_list(sock)
+
     while True:
         try:
             with open("client/input.txt") as f:
@@ -158,8 +164,8 @@ def download_files_from_input(sock, server_file_list, idle_timeout=10):
         if new_files:
             idle_time = 0
             for filename in new_files:
-                if filename not in server_file_list:
-                    print(f"❌ File '{filename}' không tồn tại trên server. Bỏ qua.")
+                if filename not in available_files:
+                    print(f"[CLIENT] ❌ File '{filename}' không tồn tại trên server. Bỏ qua.")
                     downloaded.add(filename)
                     continue
                 print(f"\n🚀 Bắt đầu tải file: {filename}")
@@ -177,8 +183,7 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
 
-    server_file_list = request_file_list(sock)
-    download_files_from_input(sock, server_file_list)
+    download_files_from_input(sock)
 
 if __name__ == "__main__":
     try:
