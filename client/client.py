@@ -13,10 +13,13 @@ def request_file_list(sock):
     rlist, _, _ = select.select([sock], [], [], TIMEOUT)
     if rlist:
         data, _ = sock.recvfrom(4096)
+        decoded = data.decode()
         print("[CLIENT] Danh sách file từ server:")
-        print(data.decode())
+        print(decoded)
+        return decoded.strip().splitlines()
     else:
         print("[CLIENT] ❌ Không nhận được phản hồi từ server.")
+        return []
 
 def get_file_size(sock, filename):
     req = {"type": "GET_SIZE", "filename": filename}
@@ -89,9 +92,9 @@ def request_all_chunks_parallel(sock, filename):
         offset = i * CHUNK_SIZE
         task_queue.put((i + 1, offset, CHUNK_SIZE))
 
-    if filesize > 100 * 1024 * 1024:
+    if filesize > 100 * 1024 * 1024:  # >100MB
         num_worker_threads = 50
-    elif filesize > 10 * 1024 * 1024:
+    elif filesize > 10 * 1024 * 1024:  # >10MB
         num_worker_threads = 30
     else:
         num_worker_threads = 10
@@ -132,7 +135,7 @@ def request_all_chunks_parallel(sock, filename):
 
     print(f"✅ Đã tải xong song song file: received_{filename}")
 
-def download_files_from_input(sock, idle_timeout=10):
+def download_files_from_input(sock, server_file_list, idle_timeout=10):
     downloaded = set()
     idle_time = 0
     poll_interval = 2
@@ -155,6 +158,10 @@ def download_files_from_input(sock, idle_timeout=10):
         if new_files:
             idle_time = 0
             for filename in new_files:
+                if filename not in server_file_list:
+                    print(f"❌ File '{filename}' không tồn tại trên server. Bỏ qua.")
+                    downloaded.add(filename)
+                    continue
                 print(f"\n🚀 Bắt đầu tải file: {filename}")
                 request_all_chunks_parallel(sock, filename)
                 downloaded.add(filename)
@@ -170,8 +177,8 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
 
-    request_file_list(sock)
-    download_files_from_input(sock)
+    server_file_list = request_file_list(sock)
+    download_files_from_input(sock, server_file_list)
 
 if __name__ == "__main__":
     try:
