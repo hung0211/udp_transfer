@@ -55,6 +55,9 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
             chunk_data = base64.b64decode(packet["data"])
             checksum = packet["checksum"]
 
+            percent = round(len(chunk_data) / length * 100, 2)
+            print(f"[CLIENT] 📥 Downloading {filename} chunk {index}... {percent}%")
+
             if hashlib.sha256(chunk_data).hexdigest() != checksum:
                 raise ValueError("Checksum mismatch")
 
@@ -86,9 +89,9 @@ def request_all_chunks_parallel(sock, filename):
         offset = i * CHUNK_SIZE
         task_queue.put((i + 1, offset, CHUNK_SIZE))
 
-    if filesize > 100 * 1024 * 1024:  # >100MB
+    if filesize > 100 * 1024 * 1024:
         num_worker_threads = 50
-    elif filesize > 10 * 1024 * 1024:  # >10MB
+    elif filesize > 10 * 1024 * 1024:
         num_worker_threads = 30
     else:
         num_worker_threads = 10
