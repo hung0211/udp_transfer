@@ -4,6 +4,8 @@ import threading
 import hashlib
 import base64
 import time
+from queue import Queue
+from tqdm import tqdm
 
 def request_file_list(sock):
     req = {"type": "GET_LIST"}
@@ -47,7 +49,6 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
         try:
             data, _ = sock.recvfrom(65536)
             if data == b"__END__":
-                print(f"[CLIENT] ✅ Chunk {index} nhận xong (EOF)")
                 return
 
             packet = json.loads(data.decode())
@@ -60,24 +61,14 @@ def request_chunk_async(sock, filename, index, offset, length, result_dict, lock
             with lock:
                 result_dict[index] = chunk_data
                 result_array[index - 1] = True
-                percent_chunk = (len(chunk_data) / length) * 100
-                print(f"[CLIENT] 📥 Downloading {filename} chunk {index} ... {percent_chunk:.0f}%")
-
         except Exception as e:
-            print(f"[CLIENT] ❌ Lỗi khi nhận chunk {index}: {e}")
             if retries < MAX_RETRIES:
-                print(f"[CLIENT] 🔁 Thử lại chunk {index} ({retries + 1}/{MAX_RETRIES})...")
                 time.sleep(0.2)
                 request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries + 1)
-            else:
-                print(f"[CLIENT] ❌ Chunk {index} thất bại sau {MAX_RETRIES} lần thử.")
     else:
         if retries < MAX_RETRIES:
-            print(f"[CLIENT] ⚠️ Chunk {index} timeout, thử lại ({retries + 1})...")
             time.sleep(0.2)
             request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks, retries + 1)
-        else:
-            print(f"[CLIENT] ❌ Chunk {index} thất bại sau {MAX_RETRIES} lần thử.")
 
 def request_all_chunks_parallel(sock, filename):
     filesize = get_file_size(sock, filename)
@@ -88,17 +79,38 @@ def request_all_chunks_parallel(sock, filename):
     num_chunks = (filesize + CHUNK_SIZE - 1) // CHUNK_SIZE
     result_dict = {}
     result_array = [False] * num_chunks
-    threads = []
     lock = threading.Lock()
 
+    task_queue = Queue()
     for i in range(num_chunks):
         offset = i * CHUNK_SIZE
-        t = threading.Thread(target=request_chunk_async, args=(sock, filename, i + 1, offset, CHUNK_SIZE, result_dict, lock, result_array, num_chunks))
-        t.start()
-        threads.append(t)
+        task_queue.put((i + 1, offset, CHUNK_SIZE))
 
-    for t in threads:
-        t.join()
+    if filesize > 100 * 1024 * 1024:  # >100MB
+        num_worker_threads = 50
+    elif filesize > 10 * 1024 * 1024:  # >10MB
+        num_worker_threads = 30
+    else:
+        num_worker_threads = 10
+
+    pbar = tqdm(total=num_chunks, desc=f"📥 Đang tải {filename}", unit="chunk")
+
+    def worker():
+        while not task_queue.empty():
+            try:
+                index, offset, length = task_queue.get_nowait()
+                request_chunk_async(sock, filename, index, offset, length, result_dict, lock, result_array, num_chunks)
+                pbar.update(1)
+            except:
+                break
+            finally:
+                task_queue.task_done()
+
+    threads = [threading.Thread(target=worker) for _ in range(num_worker_threads)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    pbar.close()
 
     missing_chunks = [i for i in range(1, num_chunks + 1) if i not in result_dict]
     if missing_chunks:
