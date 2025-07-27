@@ -1,6 +1,12 @@
-# SERVER_IP = "192.168.1.2" 
-SERVER_IP = "172.16.0.189"    
+# Địa chỉ IP và cổng mà server UDP sẽ chạy
+SERVER_IP = "192.168.1.2"
 SERVER_PORT = 12345
+
+# Kích thước mỗi chunk gửi/nhận (tính bằng byte)
 CHUNK_SIZE = 2048
-TIMEOUT = 3                    # giây
-MAX_RETRIES = 5 
+
+# Thời gian timeout (giây) khi chờ phản hồi từ server hoặc client
+TIMEOUT = 3
+
+# Số lần thử lại tối đa khi gặp lỗi hoặc timeout
+MAX_RETRIES = 5
