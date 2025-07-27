@@ -76,7 +76,8 @@ def download_chunk(sock, filename, index, offset, length, result_dict, lock, res
                 result_dict[index] = chunk_data
                 result_array[index - 1] = True
 
-            print(f"[CLIENT] ✅ Downloaded chunk {index}")
+            percent = len(chunk_data) / length * 100
+            print(f"[CLIENT] Downloading {filename} chunk {index}... {percent:.2f}%")
         except Exception as e:
             print(f"[CLIENT] ⚠️ Error chunk {index}: {e}")
             if retries < MAX_RETRIES:
@@ -188,3 +189,4 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\n[CLIENT] 🛑 Client stopped.")
+        
