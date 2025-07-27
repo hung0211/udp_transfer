@@ -11,11 +11,12 @@ def request_file_list(sock):
     req = {"type": "GET_LIST"}
     sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
 
+    # Sử dụng select để chờ phản hồi từ server trong TIMEOUT giây
     rlist, _, _ = select.select([sock], [], [], TIMEOUT)
     if rlist:
         data, _ = sock.recvfrom(4096)
         file_list = data.decode().splitlines()
-        print("[CLIENT] File list from server:")
+        print("[CLIENT] 📄 File list from server:")
         for f in file_list:
             print(f)
         return set(file_list)
@@ -51,6 +52,7 @@ def download_chunk(sock, filename, index, offset, length, result_dict, lock, res
         "length": length
     }
 
+    # Gửi yêu cầu chunk tới server
     sock.sendto(json.dumps(req).encode(), (SERVER_IP, SERVER_PORT))
     ready, _, _ = select.select([sock], [], [], TIMEOUT)
 
@@ -65,19 +67,21 @@ def download_chunk(sock, filename, index, offset, length, result_dict, lock, res
             chunk_data = base64.b64decode(packet["data"])
             checksum = packet["checksum"]
 
+            # Kiểm tra checksum
             if hashlib.sha256(chunk_data).hexdigest() != checksum:
                 raise ValueError("Checksum mismatch")
 
-            # Gửi ACK
+            # Gửi ACK xác nhận
             ack_msg = json.dumps({"type": "ACK", "filename": filename, "offset": offset})
             sock.sendto(ack_msg.encode(), server_addr)
 
+            # Cập nhật dữ liệu nhận được vào result
             with lock:
                 result_dict[index] = chunk_data
                 result_array[index - 1] = True
 
             percent = len(chunk_data) / length * 100
-            print(f"[CLIENT] Downloading {filename} chunk {index}... {percent:.2f}%")
+            print(f"[CLIENT] ✅ Downloading {filename} chunk {index}... {percent:.2f}%")
         except Exception as e:
             print(f"[CLIENT] ⚠️ Error chunk {index}: {e}")
             if retries < MAX_RETRIES:
@@ -88,34 +92,40 @@ def download_chunk(sock, filename, index, offset, length, result_dict, lock, res
             time.sleep(0.2)
             download_chunk(sock, filename, index, offset, length, result_dict, lock, result_array, retries + 1)
 
-# Tải toàn bộ file với đúng 4 kết nối song song
+# Tải toàn bộ file với đúng 4 kết nối socket song song
 def request_all_chunks_parallel(sock_main, filename):
     filesize = get_file_size(sock_main, filename)
     if filesize is None:
         print("❌ Unable to get file size.")
         return
 
+    # Tính tổng số chunk
     num_chunks = (filesize + CHUNK_SIZE - 1) // CHUNK_SIZE
     result_dict = {}
     result_array = [False] * num_chunks
     lock = threading.Lock()
 
+    # Tạo danh sách các chỉ số chunk và chia thành 4 phần cho 4 socket
     indices = list(range(1, num_chunks + 1))
-    parts = [indices[i::4] for i in range(4)]  # chia đều cho 4 phần
+    parts = [indices[i::4] for i in range(4)]
 
+    # Tạo 4 socket UDP
     sockets = [socket.socket(socket.AF_INET, socket.SOCK_DGRAM) for _ in range(4)]
     threads = []
 
-    def worker(sock, assigned_chunks):
+    def worker(sock, assigned_chunks, worker_id):
+        print(f"[CLIENT] 🔄 Thread {worker_id} bắt đầu với {len(assigned_chunks)} chunk.")
         for index in assigned_chunks:
             offset = (index - 1) * CHUNK_SIZE
             download_chunk(sock, filename, index, offset, CHUNK_SIZE, result_dict, lock, result_array)
 
+    # Khởi động 4 thread cho 4 socket
     for i in range(4):
-        t = threading.Thread(target=worker, args=(sockets[i], parts[i]))
+        t = threading.Thread(target=worker, args=(sockets[i], parts[i], i + 1))
         threads.append(t)
         t.start()
 
+    # Hiển thị tiến trình tổng thể bằng tqdm
     pbar = tqdm(total=num_chunks, desc=f"📥 Downloading {filename}", unit="chunk")
     prev_count = 0
     while any(t.is_alive() for t in threads):
@@ -126,9 +136,11 @@ def request_all_chunks_parallel(sock_main, filename):
     pbar.update(sum(result_array) - prev_count)
     pbar.close()
 
+    # Đóng socket và thread
     for t in threads: t.join()
     for s in sockets: s.close()
 
+    # Kiểm tra kết quả và ghi ra file
     if len(result_dict) != num_chunks:
         print(f"❌ Still missing {num_chunks - len(result_dict)} chunk(s). Cannot assemble complete file.")
         return
@@ -145,6 +157,7 @@ def download_files_from_input(sock, idle_timeout=10):
     poll_interval = 2
     print(f"[CLIENT] Monitoring input.txt. Will stop if no new file in {idle_timeout} seconds.")
 
+    # Lấy danh sách file có trên server
     available_files = request_file_list(sock)
 
     while True:
@@ -160,6 +173,7 @@ def download_files_from_input(sock, idle_timeout=10):
                 break
             continue
 
+        # Xử lý file chưa tải
         new_files = [fn for fn in filenames if fn not in downloaded]
         if new_files:
             idle_time = 0
@@ -178,7 +192,7 @@ def download_files_from_input(sock, idle_timeout=10):
                 break
         time.sleep(poll_interval)
 
-# Hàm main
+# Hàm main khởi tạo socket và bắt đầu giám sát input.txt
 def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setblocking(False)
@@ -189,4 +203,3 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\n[CLIENT] 🛑 Client stopped.")
-        
